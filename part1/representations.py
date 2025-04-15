@@ -156,13 +156,23 @@ def get_features(
         num_classes: The number of classes in the dataset (used to construct the FeaturesDataset).
     """
     dataset = FruitDataset(split_name, transform=feature_extractor.transform)
+    loader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
     feature_extractor.eval()
-    features = None
+    features_list = []
 
-    ### YOUR CODE STARTS HERE ###
+    with torch.no_grad():
+        for images, _ in tqdm(loader, desc=f"Extracting features for {split_name}"):
+            images = images.to(device)
+            batch_features = feature_extractor(images)
+            features_list.append(batch_features.cpu().numpy())
 
-    ### YOUR CODE ENDS HERE ###
-
+    features = np.concatenate(features_list, axis=0)
     return features, dataset.labels, dataset.num_classes
 
 
@@ -210,11 +220,51 @@ def train_linear_probe(
         linear_probe: A torch.nn.Linear object representing the trained linear probe.
         epoch_losses: A list of length num_epochs containing the average loss over each epoch.
     """
-    linear_probe = None
+    loader = torch.utils.data.DataLoader(
+        features_dataset,
+        batch_size=batch_size,
+        shuffle=True, # Shuffle for training
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+
+    # Determine input features and number of classes
+    num_features = features_dataset.features.shape[1]
+    num_classes = features_dataset.num_classes
+
+    linear_probe = torch.nn.Linear(num_features, num_classes).to(device)
+    criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(
+        linear_probe.parameters(), lr=learning_rate, weight_decay=weight_decay
+    )
+
     epoch_losses = []
 
     ### YOUR CODE STARTS HERE ###
-    
+    linear_probe.train()
+    for epoch in range(num_epochs):
+        running_loss = 0.0
+        num_batches = 0
+        for i, (features, labels) in enumerate(loader):
+            features, labels = features.to(device), labels.to(device).long() # Ensure labels are Long
+
+            # Zero the parameter gradients
+            optimizer.zero_grad()
+
+            # Forward + backward + optimize
+            outputs = linear_probe(features)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item()
+            num_batches += 1
+        
+        avg_epoch_loss = running_loss / num_batches
+        epoch_losses.append(avg_epoch_loss)
+        # Optional: Add print statement to monitor training
+        # print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {avg_epoch_loss:.4f}')
+
     ### YOUR CODE ENDS HERE ###
 
     return linear_probe, epoch_losses
@@ -267,11 +317,25 @@ def find_nearest_neighbors(
         indices: A numpy array of shape (k,) containing the indices of the k nearest neighbors of the query features in the features array.
         similarities: A numpy array of shape (k,) containing the similarities between the query features and the nearest neighbors.
     """
+    # Normalize features for efficient cosine similarity calculation
+    query_features_norm = query_features / np.linalg.norm(query_features)
+    features_norm = features / np.linalg.norm(features, axis=1, keepdims=True)
+
+    # Calculate cosine similarities
+    # Shape: (num_examples,)
+    sims = features_norm @ query_features_norm
+
     indices = None
     similarities = None
 
     ### YOUR CODE STARTS HERE ###
+    # Get indices of top k similarities (use argsort)
+    # Note: argsort sorts in ascending order, so we take the last k elements
+    sorted_indices = np.argsort(sims)
+    indices = sorted_indices[-k:][::-1] # Get top k and reverse to descending order
 
+    # Get the corresponding similarity values
+    similarities = sims[indices]
     ### YOUR CODE ENDS HERE ###
 
     return indices, similarities
