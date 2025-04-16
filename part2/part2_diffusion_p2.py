@@ -180,7 +180,7 @@ class Diffusion:
             sigma_tm1_rs = sigma_tm1.view(-1, *([1] * (x.dim() - 1)))
 
             # Predict epsilon_hat
-            eps_hat = self.model(x, t_) # Pass scalar t_ for MLP
+            eps_hat = self.model(x, t) # Pass tensor t instead of scalar t_
 
             # Calculate eta_t for DDPM
             # eta_t = sigma_{t-1}/sigma_t * sqrt(1 - alpha_t^2/alpha_{t-1}^2)
@@ -370,7 +370,7 @@ def toy_diffusion(train_data, test_data):
     """
     # --- Hyperparameters ---
     batch_size = 1024
-    epochs = 100
+    epochs = 5
     lr = 1e-3
     hidden_dim = 64
     n_hidden_layers = 4
